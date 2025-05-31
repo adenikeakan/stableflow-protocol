@@ -1,5 +1,5 @@
-;; StableFlow Math Utils Contract - Safe Arithmetic Operations
-;; Provides safe mathematical operations for the StableFlow protocol
+;; StableFlow Math Utils Contract - Utility Functions
+;; Provides safe mathematical operations and utility functions
 
 ;; Error constants
 (define-constant ERR-DIVISION-BY-ZERO (err u1001))
@@ -62,4 +62,66 @@
     (asserts! (> b u0) ERR-DIVISION-BY-ZERO)
     (ok (/ a b))
   )
+)
+
+;; Calculate percentage with precision
+(define-read-only (calculate-percentage (amount uint) (percentage uint))
+  (begin
+    (asserts! (> amount u0) ERR-INVALID-INPUT)
+    (asserts! (<= percentage u10000) ERR-INVALID-INPUT) ;; Max 100.00%
+    (let ((numerator (unwrap! (safe-multiply amount percentage) ERR-OVERFLOW)))
+      (safe-divide numerator u10000)
+    )
+  )
+)
+
+;; Calculate square root using lookup table and approximation
+(define-read-only (calculate-sqrt (x uint))
+  (begin
+    (asserts! (> x u0) ERR-INVALID-INPUT)
+    (if (<= x u1)
+      (ok x)
+      (if (<= x u4)
+        (ok u2)
+        (if (<= x u9)
+          (ok u3)
+          (if (<= x u16)
+            (ok u4)
+            (if (<= x u25)
+              (ok u5)
+              (if (<= x u36)
+                (ok u6)
+                (if (<= x u49)
+                  (ok u7)
+                  (if (<= x u64)
+                    (ok u8)
+                    (if (<= x u81)
+                      (ok u9)
+                      (if (<= x u100)
+                        (ok u10)
+                        ;; For larger numbers, use approximation
+                        (let ((approx (/ x u10)))
+                          (ok approx)
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+)
+
+;; Get minimum of two values
+(define-read-only (min (a uint) (b uint))
+  (if (<= a b) a b)
+)
+
+;; Get maximum of two values
+(define-read-only (max (a uint) (b uint))
+  (if (>= a b) a b)
 )
