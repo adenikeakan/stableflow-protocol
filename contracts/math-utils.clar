@@ -1,5 +1,5 @@
-;; StableFlow Math Utils Contract - Liquidity Calculations
-;; Provides safe mathematical operations and liquidity calculations
+;; StableFlow Math Utils Contract
+;; Provides safe mathematical operations for the StableFlow protocol
 
 ;; Error constants
 (define-constant ERR-DIVISION-BY-ZERO (err u1001))
@@ -158,6 +158,69 @@
                             reserve-b) ERR-OVERFLOW)))
         (ok (min liquidity-a liquidity-b))
       )
+    )
+  )
+)
+
+;; Calculate output amount for AMM (constant product formula)
+(define-read-only (calculate-output-amount (input-amount uint) (input-reserve uint) (output-reserve uint) (fee-rate uint))
+  (begin
+    (asserts! (> input-amount u0) ERR-INVALID-INPUT)
+    (asserts! (> input-reserve u0) ERR-INVALID-INPUT)
+    (asserts! (> output-reserve u0) ERR-INVALID-INPUT)
+    (asserts! (<= fee-rate u10000) ERR-INVALID-INPUT) ;; Max 100.00%
+    
+    ;; Calculate amount after fee
+    (let ((fee-amount (unwrap! (calculate-percentage input-amount fee-rate) ERR-OVERFLOW))
+          (amount-after-fee (unwrap! (safe-subtract input-amount fee-amount) ERR-UNDERFLOW))
+          (numerator (unwrap! (safe-multiply amount-after-fee output-reserve) ERR-OVERFLOW))
+          (denominator (unwrap! (safe-add input-reserve amount-after-fee) ERR-OVERFLOW)))
+      (safe-divide numerator denominator)
+    )
+  )
+)
+
+;; Calculate price impact percentage
+(define-read-only (calculate-price-impact (input-amount uint) (input-reserve uint) (output-reserve uint))
+  (begin
+    (asserts! (> input-amount u0) ERR-INVALID-INPUT)
+    (asserts! (> input-reserve u0) ERR-INVALID-INPUT)
+    (asserts! (> output-reserve u0) ERR-INVALID-INPUT)
+    
+    ;; Price before trade
+    (let ((price-before (unwrap! (safe-divide 
+                          (unwrap! (safe-multiply output-reserve PRECISION) ERR-OVERFLOW) 
+                          input-reserve) ERR-OVERFLOW))
+          ;; Price after trade
+          (new-input-reserve (unwrap! (safe-add input-reserve input-amount) ERR-OVERFLOW))
+          (output-amount (unwrap! (calculate-output-amount input-amount input-reserve output-reserve u30) ERR-OVERFLOW)) ;; 0.3% fee
+          (new-output-reserve (unwrap! (safe-subtract output-reserve output-amount) ERR-UNDERFLOW))
+          (price-after (unwrap! (safe-divide 
+                         (unwrap! (safe-multiply new-output-reserve PRECISION) ERR-OVERFLOW) 
+                         new-input-reserve) ERR-OVERFLOW))
+          ;; Calculate impact
+          (price-diff (if (> price-before price-after)
+                        (unwrap! (safe-subtract price-before price-after) ERR-UNDERFLOW)
+                        (unwrap! (safe-subtract price-after price-before) ERR-UNDERFLOW)))
+          (impact (unwrap! (safe-divide 
+                     (unwrap! (safe-multiply price-diff u10000) ERR-OVERFLOW) 
+                     price-before) ERR-OVERFLOW)))
+      (ok impact)
+    )
+  )
+)
+
+;; Validate slippage tolerance
+(define-read-only (is-within-slippage (expected-output uint) (actual-output uint) (slippage-tolerance uint))
+  (begin
+    (asserts! (> expected-output u0) ERR-INVALID-INPUT)
+    (asserts! (> actual-output u0) ERR-INVALID-INPUT)
+    (asserts! (<= slippage-tolerance u10000) ERR-INVALID-INPUT) ;; Max 100.00%
+    
+    (let ((min-output (unwrap! (safe-subtract expected-output 
+                                (unwrap! (calculate-percentage expected-output slippage-tolerance) ERR-OVERFLOW)) 
+                                ERR-UNDERFLOW)))
+      (ok (>= actual-output min-output))
     )
   )
 )
