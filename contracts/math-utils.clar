@@ -1,5 +1,5 @@
-;; StableFlow Math Utils Contract - Utility Functions
-;; Provides safe mathematical operations and utility functions
+;; StableFlow Math Utils Contract - Liquidity Calculations
+;; Provides safe mathematical operations and liquidity calculations
 
 ;; Error constants
 (define-constant ERR-DIVISION-BY-ZERO (err u1001))
@@ -124,4 +124,40 @@
 ;; Get maximum of two values
 (define-read-only (max (a uint) (b uint))
   (if (>= a b) a b)
+)
+
+;; Calculate proportional amount for liquidity calculations
+(define-read-only (calculate-proportional-amount (amount uint) (reserve-a uint) (reserve-b uint))
+  (begin
+    (asserts! (> amount u0) ERR-INVALID-INPUT)
+    (asserts! (> reserve-a u0) ERR-INVALID-INPUT)
+    (asserts! (> reserve-b u0) ERR-INVALID-INPUT)
+    (let ((numerator (unwrap! (safe-multiply amount reserve-b) ERR-OVERFLOW)))
+      (safe-divide numerator reserve-a)
+    )
+  )
+)
+
+;; Calculate liquidity tokens to mint (geometric mean)
+(define-read-only (calculate-liquidity-tokens (amount-a uint) (amount-b uint) (reserve-a uint) (reserve-b uint) (total-supply uint))
+  (begin
+    (asserts! (> amount-a u0) ERR-INVALID-INPUT)
+    (asserts! (> amount-b u0) ERR-INVALID-INPUT)
+    (if (is-eq total-supply u0)
+      ;; Initial liquidity - use geometric mean minus minimum liquidity
+      (let ((product (unwrap! (safe-multiply amount-a amount-b) ERR-OVERFLOW))
+            (sqrt-result (unwrap! (calculate-sqrt product) ERR-OVERFLOW)))
+        (safe-subtract sqrt-result u1000) ;; Subtract minimum liquidity
+      )
+      ;; Subsequent liquidity - use minimum ratio to prevent manipulation
+      (let ((liquidity-a (unwrap! (safe-divide 
+                            (unwrap! (safe-multiply amount-a total-supply) ERR-OVERFLOW) 
+                            reserve-a) ERR-OVERFLOW))
+            (liquidity-b (unwrap! (safe-divide 
+                            (unwrap! (safe-multiply amount-b total-supply) ERR-OVERFLOW) 
+                            reserve-b) ERR-OVERFLOW)))
+        (ok (min liquidity-a liquidity-b))
+      )
+    )
+  )
 )
